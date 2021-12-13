@@ -7,6 +7,8 @@ using System.IO;
 using System.Linq;
 using Yarn.Compiler;
 using Yarn.Markup;
+using System.Globalization;
+using System.Threading;
 
 namespace YarnSpinner.Tests
 {
@@ -188,6 +190,10 @@ namespace YarnSpinner.Tests
         [InlineData("[a p=true]s[/a]", MarkupValueType.Bool, "True")]
         [InlineData("[a p=false]s[/a]", MarkupValueType.Bool, "False")]
         public void TestMarkupPropertyParsing(string input, MarkupValueType expectedType, string expectedValueAsString) {
+           
+            //Necessary to ensure '.' as decimal symbol when parsing 13.37
+            Thread.CurrentThread.CurrentCulture = CultureInfo.CreateSpecificCulture("en-GB");
+            
             var markup = dialogue.ParseMarkup(input);
 
             var attribute = markup.Attributes[0];
