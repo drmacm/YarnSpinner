@@ -1,0 +1,118 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+	<PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(TargetFrameworkVersion)', 'v4.7.2'))">
+	  <DefineConstants>NETFRAMEWORK</DefineConstants>
+	</PropertyGroup>
+	<PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{5D9CC0B1-6449-4099-9E53-33F607D1EF70}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>YarnSpinner.Compiler.Framework</RootNamespace>
+    <AssemblyName>YarnSpinner.Compiler.Framework</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <NuGetPackageImportStamp>
+    </NuGetPackageImportStamp>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Antlr4.Runtime, Version=4.6.0.0, Culture=neutral, PublicKeyToken=09abb75b9ed49849, processorArchitecture=MSIL">
+      <HintPath>..\packages\Antlr4.Runtime.4.6.6\lib\net45\Antlr4.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="CsvHelper, Version=12.0.0.0, Culture=neutral, PublicKeyToken=8c4959082be5c823, processorArchitecture=MSIL">
+      <HintPath>..\packages\CsvHelper.12.2.2\lib\net47\CsvHelper.dll</HintPath>
+    </Reference>
+    <Reference Include="Google.Protobuf, Version=3.10.0.0, Culture=neutral, PublicKeyToken=a7d26565bac4d604, processorArchitecture=MSIL">
+      <HintPath>..\packages\Google.Protobuf.3.10.0\lib\net45\Google.Protobuf.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="CodeGenerationVisitor.cs" />
+    <Compile Include="Compiler.cs" />
+    <Compile Include="ConstantValueVisitor.cs" />
+    <Compile Include="Declaration.cs" />
+    <Compile Include="DeclarationVisitor.cs" />
+    <Compile Include="ErrorListener.cs" />
+    <Compile Include="ErrorStrategy.cs" />
+    <Compile Include="IndentAwareLexer.cs" />
+    <Compile Include="StringTableGeneratorVisitor.cs" />
+    <Compile Include="TypeCheckVisitor.cs" />
+    <Compile Include="TypeDeclarationListener.cs" />
+    <Compile Include="Upgrader\ILanguageUpgrader.cs" />
+    <Compile Include="Upgrader\LanguageUpgrader.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\FormatFunctionUpgrader.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\LanguageUpgraderV1.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\OptionsUpgrader.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\TypeBinding.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\VariableDeclarationUpgrader.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1Lexer.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1Parser.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1ParserBaseListener.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1ParserBaseVisitor.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1ParserListener.cs" />
+    <Compile Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1ParserVisitor.cs" />
+    <Compile Include="Upgrader\UpgradeType.cs" />
+    <Compile Include="Utility.cs" />
+    <Compile Include="YarnSpinnerLexer.cs" />
+    <Compile Include="YarnSpinnerParser.cs" />
+    <Compile Include="YarnSpinnerParserBaseListener.cs" />
+    <Compile Include="YarnSpinnerParserBaseVisitor.cs" />
+    <Compile Include="YarnSpinnerParserExpression.cs" />
+    <Compile Include="YarnSpinnerParserListener.cs" />
+    <Compile Include="YarnSpinnerParserVisitor.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+    <None Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1Lexer.g4" />
+    <None Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1Lexer.tokens" />
+    <None Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1Parser.g4" />
+    <None Include="Upgrader\Upgraders\V1toV2\YarnSpinnerV1Parser.tokens" />
+    <None Include="YarnSpinnerLexer.g4" />
+    <None Include="YarnSpinnerLexer.tokens" />
+    <None Include="YarnSpinnerParser.g4" />
+    <None Include="YarnSpinnerParser.tokens" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\YarnSpinner\YarnSpinner.Framework.csproj">
+      <Project>{f1724cb5-8942-42e1-b5cc-c1c1a4f68e25}</Project>
+      <Name>YarnSpinner.Framework</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Import Project="..\packages\Google.Protobuf.Tools.3.10.0\build\Google.Protobuf.Tools.targets" Condition="Exists('..\packages\Google.Protobuf.Tools.3.10.0\build\Google.Protobuf.Tools.targets')" />
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\Google.Protobuf.Tools.3.10.0\build\Google.Protobuf.Tools.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Google.Protobuf.Tools.3.10.0\build\Google.Protobuf.Tools.targets'))" />
+  </Target>
+</Project>
