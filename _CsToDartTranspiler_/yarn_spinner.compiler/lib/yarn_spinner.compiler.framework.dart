@@ -1,0 +1,22 @@
+library yarn_spinner.compiler.framework;
+
+export 'src/compiler.dart';
+export 'src/declaration.dart';
+export 'src/error_listener.dart';
+export 'src/indent_aware_lexer.dart';
+export 'src/upgrader/language_upgrader.dart';
+export 'src/upgrader/upgraders/v1to_v2/variable_declaration_upgrader.dart';
+export 'src/upgrader/upgraders/v1to_v2/yarn_spinner_v1_lexer.dart';
+export 'src/upgrader/upgraders/v1to_v2/yarn_spinner_v1_parser.dart';
+export 'src/upgrader/upgraders/v1to_v2/yarn_spinner_v1_parser_base_listener.dart';
+export 'src/upgrader/upgraders/v1to_v2/yarn_spinner_v1_parser_base_visitor.dart';
+export 'src/upgrader/upgraders/v1to_v2/yarn_spinner_v1_parser_listener.dart';
+export 'src/upgrader/upgraders/v1to_v2/yarn_spinner_v1_parser_visitor.dart';
+export 'src/utility.dart';
+export 'src/yarn_spinner_lexer.dart';
+export 'src/yarn_spinner_parser.dart';
+export 'src/yarn_spinner_parser_base_listener.dart';
+export 'src/yarn_spinner_parser_base_visitor.dart';
+export 'src/yarn_spinner_parser_expression.dart';
+export 'src/yarn_spinner_parser_listener.dart';
+export 'src/yarn_spinner_parser_visitor.dart';

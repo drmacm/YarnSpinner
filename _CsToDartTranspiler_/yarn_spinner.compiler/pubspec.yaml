@@ -1,0 +1,12 @@
+name: yarn_spinner.compiler.framework
+description:
+version: 0.0.1
+author:
+
+dependencies:
+  kacommon:
+    path: ../kacommon
+
+  yarn_spinner.framework:
+    path: ../YarnSpinner
+
