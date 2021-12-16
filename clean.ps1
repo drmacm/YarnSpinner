@@ -1,0 +1,6 @@
+rm -r -fo "YarnSpinner/bin"
+rm -r -fo "YarnSpinner/obj"
+rm -r -fo "YarnSpinner.Compiler/bin"
+rm -r -fo "YarnSpinner.Compiler/obj"
+rm -r -fo "YarnSpinner.Tests/bin"
+rm -r -fo "YarnSpinner.Tests/obj"
