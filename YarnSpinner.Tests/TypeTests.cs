@@ -662,7 +662,7 @@ namespace YarnSpinner.Tests
             <<set $v = {value}>>
             ");
 
-            var result = Compiler.Compile(CompilationJob.CreateFromString("<input>", source));
+            var result = Compiler.Compile(CompilationJob.CreateFromString("input", source));
 
             Assert.Empty(result.Diagnostics);
 

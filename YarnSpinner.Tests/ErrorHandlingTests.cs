@@ -67,7 +67,7 @@ namespace YarnSpinner.Tests
             
             foreach (var source in new[] { source1, source2}) {
 
-                var result = Compiler.Compile(CompilationJob.CreateFromString("<input>", source));             
+                var result = Compiler.Compile(CompilationJob.CreateFromString("input", source));             
 
                 Assert.Collection(result.Diagnostics,
                     d =>
