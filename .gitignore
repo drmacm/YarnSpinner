@@ -155,4 +155,3 @@ YarnSpinner.Tests/coverage/
 
 # .NET Framework packages and transpiler output
 packages/
-_CsToDartTranspiler_
