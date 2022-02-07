@@ -243,7 +243,7 @@ namespace Yarn.Compiler
 
                 if (TypeUtil.IsSubType(expectedType, suppliedType) == false)
                 {
-                    this.diagnostics.Add(new Diagnostic(this.sourceFileName, context, $"{functionName} parameter {i + 1} expects a {expectedType.Name}, not a {suppliedType.Name}"));
+                    this.diagnostics.Add(new Diagnostic(this.sourceFileName, context, $"{functionName} parameter {i + 1} expects a {expectedType.Name}, not a {(suppliedType?.Name ?? "undefined")}"));
                     return functionType.ReturnType;
                 }
             }
@@ -722,6 +722,12 @@ namespace Yarn.Compiler
             }
 
             return BuiltinTypes.String;
+        }
+
+        public override IType VisitJumpToExpression([NotNull] YarnSpinnerParser.JumpToExpressionContext context)
+        {
+            // The expression's type must resolve to a string.
+            return CheckOperation(context, new[] { context.expression() }, Operator.None, "jump statement", BuiltinTypes.String);
         }
     }
 }
