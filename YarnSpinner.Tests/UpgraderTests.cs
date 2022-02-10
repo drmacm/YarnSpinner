@@ -64,7 +64,9 @@ namespace YarnSpinner.Tests
 
                 var expectedOutputFileContents = File.ReadAllText(expectedOutputFilePath);
 
-                Assert.Equal(expectedOutputFileContents, outputFile.UpgradedSource);
+                var upgradedContents = outputFile.UpgradedSource.Replace("\r\n", "\n");
+
+                Assert.Equal(expectedOutputFileContents, upgradedContents);
             }
 
             // If the test case doesn't contain a test plan file, it's not

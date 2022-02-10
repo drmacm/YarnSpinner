@@ -73,6 +73,8 @@ custom: yes
 
             var generatedOutput = Utility.GenerateYarnFileWithDeclarations(result.Declarations, "Program", tags, headers);
 
+            generatedOutput = generatedOutput.Replace("\r\n", "\n");
+
             Assert.Equal(originalText, generatedOutput);
         }
 

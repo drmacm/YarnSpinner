@@ -9,6 +9,7 @@ using System.Linq;
 using Yarn.Compiler;
 using CLDRPlurals;
 using System.Globalization;
+using System.Threading;
 
 namespace YarnSpinner.Tests
 {
@@ -273,6 +274,8 @@ namespace YarnSpinner.Tests
         [MemberData(nameof(FileSources), "Issues")]
         public void TestSources(string file)
         {
+            //Necessary to ensure '.' as decimal symbol
+            Thread.CurrentThread.CurrentCulture = CultureInfo.CreateSpecificCulture("en-GB");
 
             Console.ForegroundColor = ConsoleColor.Blue;
             Console.WriteLine($"INFO: Loading file {file}");
