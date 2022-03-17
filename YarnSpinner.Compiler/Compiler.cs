@@ -20,7 +20,7 @@ namespace Yarn.Compiler
         {
             get
             {
-                foreach (var item in StringTable)
+                foreach (var item in this.StringTable)
                 {
                     if (item.Value.isImplicitTag)
                     {
@@ -81,7 +81,7 @@ namespace Yarn.Compiler
         {
             foreach (var entry in otherStringTable)
             {
-                StringTable.Add(entry.Key, entry.Value);
+                this.StringTable.Add(entry.Key, entry.Value);
             }
         }
 
@@ -183,7 +183,7 @@ namespace Yarn.Compiler
         /// <inheritdoc/>
         public override string ToString()
         {
-            return $"{text} ({fileName}:{lineNumber})";
+            return $"{this.text} ({this.fileName}:{this.lineNumber})";
         }
     }
 
@@ -418,6 +418,12 @@ namespace Yarn.Compiler
         public IEnumerable<Diagnostic> Diagnostics { get; internal set; }
 
         /// <summary>
+        /// Gets the collection of <see cref="DebugInfo"/> objects for each node
+        /// in <see cref="Program"/>.
+        /// </summary>
+        public IReadOnlyDictionary<string, DebugInfo> DebugInfo { get; internal set; }
+
+        /// <summary>
         /// Combines multiple <see cref="CompilationResult"/> objects together
         /// into one object.
         /// </summary>
@@ -433,6 +439,7 @@ namespace Yarn.Compiler
             var declarations = new List<Declaration>();
             var tags = new Dictionary<string, IEnumerable<string>>();
             var diagnostics = new List<Diagnostic>();
+            var nodeDebugInfos = new Dictionary<string, DebugInfo>();
 
             foreach (var result in results)
             {
@@ -455,17 +462,112 @@ namespace Yarn.Compiler
                 {
                     diagnostics.AddRange(result.Diagnostics);
                 }
+
+                if (result.DebugInfo != null)
+                {
+                    foreach (var kvp in result.DebugInfo)
+                    {
+                        nodeDebugInfos.Add(kvp.Key, kvp.Value);
+                    }
+                }
             }
+
+            Program combinedProgram = programs.Count > 0 ? Program.Combine(programs.ToArray()) : null;
 
             return new CompilationResult
             {
-                Program = Program.Combine(programs.ToArray()),
+                Program = combinedProgram,
                 StringTable = stringTableManager.StringTable,
                 Declarations = declarations,
+                DebugInfo = nodeDebugInfos,
                 ContainsImplicitStringTags = stringTableManager.ContainsImplicitStringTags,
                 FileTags = tags,
                 Diagnostics = diagnostics,
             };
+        }
+    }
+
+    /// <summary>
+    /// Contains debug information for a node in a Yarn file.
+    /// </summary>
+    public class DebugInfo
+    {
+        /// <summary>
+        /// Gets or sets the file that this DebugInfo was produced from.
+        /// </summary>
+        internal string FileName { get; set; }
+
+        /// <summary>
+        /// Gets or sets the node that this DebugInfo was produced from.
+        /// </summary>
+        internal string NodeName { get; set; }
+
+        /// <summary>
+        /// Gets or sets the mapping of instruction numbers to line and
+        /// character information in the file indicated by <see
+        /// cref="FileName"/>.
+        /// </summary>
+        internal Dictionary<int, (int Line, int Character)> LineInfos { get; set; } = new Dictionary<int, (int Line, int Character)>();
+
+        /// <summary>
+        /// Gets a <see cref="LineInfo"/> object that describes the specified
+        /// instruction at the index <paramref name="instructionNumber"/>.
+        /// </summary>
+        /// <param name="instructionNumber">The index of the instruction to
+        /// retrieve information for.</param>
+        /// <returns>A <see cref="LineInfo"/> object that describes the position
+        /// of the instruction.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref
+        /// name="instructionNumber"/> is less than zero, or greater than the
+        /// number of instructions present in the node.</exception>
+        public LineInfo GetLineInfo(int instructionNumber)
+        {
+            if (this.LineInfos.TryGetValue(instructionNumber, out var info))
+            {
+                return new LineInfo
+                {
+                    FileName = this.FileName,
+                    NodeName = this.NodeName,
+                    LineNumber = info.Line,
+                    CharacterNumber = info.Character,
+                };
+            }
+            else
+            {
+                throw new ArgumentOutOfRangeException(nameof(instructionNumber));
+            }
+        }
+
+        /// <summary>
+        /// Contains positional information about an instruction.
+        /// </summary>
+        public struct LineInfo
+        {
+            /// <summary>
+            /// The file name of the source that this intruction was produced
+            /// from.
+            /// </summary>
+            public string FileName;
+
+            /// <summary>
+            /// The node name of the source that this intruction was produced
+            /// from.
+            /// </summary>
+            public string NodeName;
+
+            /// <summary>
+            /// The zero-indexed line number in <see cref="FileName"/> that
+            /// contains the statement or expression that this line was produced
+            /// from.
+            /// </summary>
+            public int LineNumber;
+
+            /// <summary>
+            /// The zero-indexed character number in <see cref="FileName"/> that
+            /// contains the statement or expression that this line was produced
+            /// from.
+            /// </summary>
+            public int CharacterNumber;
         }
     }
 
@@ -487,6 +589,12 @@ namespace Yarn.Compiler
         internal Node CurrentNode { get; private set; }
 
         /// <summary>
+        /// Gets the current debug information that describes <see
+        /// cref="CurrentNode"/>.
+        /// </summary>
+        private DebugInfo CurrentDebugInfo { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether we are currently parsing the
         /// current node as a 'raw text' node, or as a fully syntactic node.
         /// </summary>
@@ -497,6 +605,8 @@ namespace Yarn.Compiler
         /// Gets the program being generated by the compiler.
         /// </summary>
         internal Program Program { get; private set; }
+
+        internal IList<DebugInfo> DebugInfos { get; private set; } = new List<DebugInfo>();
 
         internal FileParseResult fileParseResult { get; private set; }
 
@@ -530,6 +640,8 @@ namespace Yarn.Compiler
 
         private List<Diagnostic> diagnostics = new List<Diagnostic>();
 
+        // the list of nodes we have to ensure we track visitation
+        private HashSet<string> TrackingNodes;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Compiler"/> class.
@@ -537,7 +649,7 @@ namespace Yarn.Compiler
         /// <param name="fileParseResult">The file parse result to use.</param>
         internal Compiler(FileParseResult fileParseResult)
         {
-            Program = new Program();
+            this.Program = new Program();
             this.fileParseResult = fileParseResult;
         }
 
@@ -556,6 +668,9 @@ namespace Yarn.Compiler
         public static CompilationResult Compile(CompilationJob compilationJob)
         {
             var results = new List<CompilationResult>();
+
+            // I think it is bad that we have two variables with identical behaviours and almost identical data
+            // we should merge these or at least remove the needed duplication of work
 
             // All variable declarations that we've encountered during this
             // compilation job
@@ -636,35 +751,88 @@ namespace Yarn.Compiler
             {
                 GetDeclarations(parsedFile, knownVariableDeclarations, out var newDeclarations, typeDeclarations, out var newFileTags, out var declarationDiagnostics);
 
-                derivedVariableDeclarations.AddRange(newDeclarations);
                 knownVariableDeclarations.AddRange(newDeclarations);
+                derivedVariableDeclarations.AddRange(newDeclarations);
                 diagnostics.AddRange(declarationDiagnostics);
 
                 fileTags.Add(parsedFile.Name, newFileTags);
             }
 
+            List<DeferredTypeDiagnostic> potentialIssues = new List<DeferredTypeDiagnostic>();
             foreach (var parsedFile in parsedFiles)
             {
                 var checker = new TypeCheckVisitor(parsedFile.Name, knownVariableDeclarations, typeDeclarations);
 
                 checker.Visit(parsedFile.Tree);
-                derivedVariableDeclarations.AddRange(checker.NewDeclarations);
                 knownVariableDeclarations.AddRange(checker.NewDeclarations);
+                derivedVariableDeclarations.AddRange(checker.NewDeclarations);
                 diagnostics.AddRange(checker.Diagnostics);
+
+                potentialIssues.AddRange(checker.deferredTypes);
 
 #if VALIDATE_ALL_EXPRESSIONS
                 // Validate that the type checker assigned a type to every
                 // expression
-                var allExpressions = FlattenParseTree(parsedFile.tree).OfType<YarnSpinnerParser.ExpressionContext>();
+                var allExpressions = FlattenParseTree(parsedFile.Tree).OfType<YarnSpinnerParser.ExpressionContext>();
 
                 var expressionsWithNoType = allExpressions.Where(e => e.Type == BuiltinTypes.Undefined);
 
-                if (expressionsWithNoType.Count() > 0) {
+                if (expressionsWithNoType.Count() > 0)
+                {
                     string report = string.Join(", ", expressionsWithNoType.Select(e => $"{e.GetTextWithWhitespace()} (line {e.Start.Line})"));
 
                     throw new InvalidOperationException($"Internal error: The following expressions were not assigned a type: {report}");
                 }
 #endif
+            }
+
+            // determining the nodes we need to track visits on
+            // this needs to be done before we finish up with declarations
+            // so that any tracking variables are included in the compiled declarations
+            HashSet<string> trackingNodes = new HashSet<string>();
+            HashSet<string> ignoringNodes = new HashSet<string>();
+            foreach (var parsedFile in parsedFiles)
+            {
+                var thingy = new NodeTrackingVisitor(trackingNodes, ignoringNodes);
+                thingy.Visit(parsedFile.Tree);
+            }
+
+            // removing all nodes we are told explicitly to not track
+            trackingNodes.ExceptWith(ignoringNodes);
+
+            var trackingDeclarations = new List<Declaration>();
+            foreach (var node in trackingNodes)
+            {
+                trackingDeclarations.Add(Declaration.CreateVariable(Yarn.Library.GenerateUniqueVisitedVariableForNode(node), BuiltinTypes.Number, 0, $"The generated variable for tracking visits of node {node}"));
+            }
+
+            // adding the generated tracking variables into the declaration list
+            // this way any future variable storage system will know about them
+            // if we didn't do this later stages wouldn't be able to interface with them
+            knownVariableDeclarations.AddRange(trackingDeclarations);
+            derivedVariableDeclarations.AddRange(trackingDeclarations);
+
+            var totalDeclarations = new List<Declaration>();
+            totalDeclarations.AddRange(derivedVariableDeclarations);
+            totalDeclarations.AddRange(knownVariableDeclarations);
+
+            // ok here we need to run through any deferredTypes we have and see if they got resolved
+            foreach (var hmm in potentialIssues)
+            {
+                var resolved = false;
+                foreach (var dec in totalDeclarations)
+                {
+                    if (dec.Name == hmm.Name)
+                    {
+                        resolved = true;
+                        break;
+                    }
+                }
+                if (resolved)
+                {
+                    continue;
+                }
+                diagnostics.Add(hmm.diagnostic);
             }
 
             if (compilationJob.CompilationType == CompilationJob.Type.DeclarationsOnly)
@@ -681,17 +849,28 @@ namespace Yarn.Compiler
                 };
             }
 
-            foreach (var parsedFile in parsedFiles)
+
+            if (diagnostics.Any(d => d.Severity == Diagnostic.DiagnosticSeverity.Error))
             {
-                CompilationResult compilationResult = GenerateCode(parsedFile, knownVariableDeclarations, compilationJob, stringTableManager);
-                results.Add(compilationResult);
+                // We have errors, so we can't safely generate code.
+            }
+            else
+            {
+                // No errors! Go ahead and generate the code for all parsed
+                // files.
+                foreach (var parsedFile in parsedFiles)
+                {
+                    CompilationResult compilationResult = GenerateCode(parsedFile, knownVariableDeclarations, compilationJob, stringTableManager, trackingNodes);
+
+                    results.Add(compilationResult);
+                }
             }
 
             var finalResult = CompilationResult.CombineCompilationResults(results, stringTableManager);
 
             // Last step: take every variable declaration we found in all
             // of the inputs, and create an initial value registration for
-            // it. 
+            // it.
             foreach (var declaration in knownVariableDeclarations)
             {
                 // We only care about variable declarations here
@@ -733,7 +912,9 @@ namespace Yarn.Compiler
                     throw new ArgumentOutOfRangeException($"Cannot create an initial value for type {declaration.Type.Name}");
                 }
 
-                finalResult.Program.InitialValues.Add(declaration.Name, value);
+                if (finalResult.Program != null) {
+                    finalResult.Program.InitialValues.Add(declaration.Name, value);
+                }
             }
 
             finalResult.Declarations = derivedVariableDeclarations;
@@ -741,14 +922,6 @@ namespace Yarn.Compiler
             finalResult.FileTags = fileTags;
 
             finalResult.Diagnostics = finalResult.Diagnostics.Concat(diagnostics).Distinct();
-
-            // Do not return a program if any Errors were generated (even
-            // if bytecode happened to be produced; it is not guaranteed to
-            // work correctly.)
-            if (finalResult.Diagnostics.Any(p => p.Severity == Diagnostic.DiagnosticSeverity.Error))
-            {
-                finalResult.Program = null;
-            }
 
             return finalResult;
         }
@@ -779,17 +952,26 @@ namespace Yarn.Compiler
             diagnostics = newDiagnosticList;
         }
 
-        private static CompilationResult GenerateCode(FileParseResult fileParseResult, IEnumerable<Declaration> variableDeclarations, CompilationJob job, StringTableManager stringTableManager)
+        private static CompilationResult GenerateCode(FileParseResult fileParseResult, IEnumerable<Declaration> variableDeclarations, CompilationJob job, StringTableManager stringTableManager, HashSet<string> trackingNodes)
         {
             Compiler compiler = new Compiler(fileParseResult);
 
+            compiler.TrackingNodes = trackingNodes;
             compiler.Library = job.Library;
             compiler.VariableDeclarations = variableDeclarations;
             compiler.Compile();
 
+            var debugInfoDictionary = new Dictionary<string, DebugInfo>();
+
+            foreach (var debugInfo in compiler.DebugInfos)
+            {
+                debugInfoDictionary.Add(debugInfo.NodeName, debugInfo);
+            }
+
             return new CompilationResult
             {
                 Program = compiler.Program,
+                DebugInfo = debugInfoDictionary,
                 StringTable = stringTableManager.StringTable,
                 ContainsImplicitStringTags = stringTableManager.ContainsImplicitStringTags,
                 Diagnostics = compiler.Diagnostics,
@@ -878,8 +1060,7 @@ namespace Yarn.Compiler
                 {
                     Name = function.Key,
                     Type = functionType,
-                    SourceFileLine = -1,
-                    SourceNodeLine = -1,
+                    Range = { },
                     SourceFileName = Declaration.ExternalDeclaration,
                     SourceNodeName = null,
                 };
@@ -908,8 +1089,8 @@ namespace Yarn.Compiler
             YarnSpinnerParser parser = new YarnSpinnerParser(tokens);
 
             // turning off the normal error listener and using ours
-            var parserErrorListener = new ParserErrorListener();
-            var lexerErrorListener = new LexerErrorListener();
+            var parserErrorListener = new ParserErrorListener(fileName);
+            var lexerErrorListener = new LexerErrorListener(fileName);
 
             parser.ErrorHandler = new ErrorStrategy();
 
@@ -976,7 +1157,7 @@ namespace Yarn.Compiler
         /// <returns>The new label name.</returns>
         internal string RegisterLabel(string commentary = null)
         {
-            return "L" + labelCount++ + commentary;
+            return "L" + this.labelCount++ + commentary;
         }
 
         /// <summary>
@@ -984,32 +1165,64 @@ namespace Yarn.Compiler
         /// cref="Program" />.
         /// </summary>
         /// <param name="node">The node to append instructions to.</param>
+        /// <param name="debugInfo">The <see cref="DebugInfo"/> object to add
+        /// line debugging information to.</param>
+        /// <param name="sourceLine">The zero-indexed line in the source input
+        /// corresponding to this instruction.</param>
+        /// <param name="sourceCharacter">The zero-indexed character in the
+        /// source input corresponding to this instruction.</param>
         /// <param name="code">The opcode of the instruction.</param>
         /// <param name="operands">The operands to associate with the
         /// instruction.</param>
-        void Emit(Node node, OpCode code, params Operand[] operands)
+        void Emit(Node node, DebugInfo debugInfo, int sourceLine, int sourceCharacter, OpCode code, params Operand[] operands)
         {
             var instruction = new Instruction
             {
-                Opcode = code
+                Opcode = code,
             };
 
             instruction.Operands.Add(operands);
+
+            debugInfo.LineInfos.Add(node.Instructions.Count, (sourceLine, sourceCharacter));
 
             node.Instructions.Add(instruction);
         }
 
         /// <summary>
-        /// Creates a new instruction, and appends it to the current node
-        /// in the <see cref="Program"/>. Called by instances of <see
-        /// cref="CodeGenerationVisitor"/> while walking the parse tree.
+        /// Creates a new instruction, and appends it to the current node in the
+        /// <see cref="Program"/>.
         /// </summary>
+        /// <remarks>
+        /// Called by instances of <see
+        /// cref="CodeGenerationVisitor"/> while walking the parse tree.
+        /// </remarks>
+        /// <param name="code">The opcode of the instruction.</param>
+        /// <param name="startToken">The first token in the expression or
+        /// statement that was responsible for emitting this
+        /// instruction.</param>
+        /// <param name="operands">The operands to associate with the
+        /// instruction.</param>
+        internal void Emit(OpCode code, IToken startToken, params Operand[] operands)
+        {
+            this.Emit(this.CurrentNode, this.CurrentDebugInfo, startToken?.Line - 1 ?? -1, startToken?.Column ?? -1, code, operands);
+        }
+
+        /// <summary>
+        /// Creates a new instruction, and appends it to the current node in the
+        /// <see cref="Program"/>.
+        /// Differs from the other Emit call by not requiring a start token.
+        /// This enables its use in pure synthesised elements of the Yarn.
+        /// </summary>
+        /// <remarks>
+        /// Called by instances of <see
+        /// cref="CodeGenerationVisitor"/> while walking the parse tree.
+        /// </remarks>
         /// <param name="code">The opcode of the instruction.</param>
         /// <param name="operands">The operands to associate with the
         /// instruction.</param>
         internal void Emit(OpCode code, params Operand[] operands)
         {
-            Emit(this.CurrentNode, code, operands);
+            this.Emit(this.CurrentNode, this.CurrentDebugInfo, -1, -1, code, operands);
         }
 
         /// <summary>
@@ -1052,17 +1265,24 @@ namespace Yarn.Compiler
         // hold it and otherwise continue
         public override void EnterNode(YarnSpinnerParser.NodeContext context)
         {
-            CurrentNode = new Node();
-            RawTextNode = false;
+            this.CurrentNode = new Node();
+            this.CurrentDebugInfo = new DebugInfo();
+            this.RawTextNode = false;
         }
 
         // have left the current node store it into the program wipe the
         // var and make it ready to go again
         public override void ExitNode(YarnSpinnerParser.NodeContext context)
         {
-            Program.Nodes[CurrentNode.Name] = CurrentNode;
-            CurrentNode = null;
-            RawTextNode = false;
+            this.Program.Nodes[this.CurrentNode.Name] = this.CurrentNode;
+
+            this.CurrentDebugInfo.NodeName = this.CurrentNode.Name;
+            this.CurrentDebugInfo.FileName = this.fileParseResult.Name;
+
+            this.DebugInfos.Add(this.CurrentDebugInfo);
+
+            this.CurrentNode = null;
+            this.RawTextNode = false;
         }
 
         // have finished with the header so about to enter the node body
@@ -1082,13 +1302,13 @@ namespace Yarn.Compiler
             if (headerKey.Equals("title", StringComparison.InvariantCulture))
             {
                 // Set the name of the node
-                CurrentNode.Name = headerValue;
+                this.CurrentNode.Name = headerValue;
 
                 // Throw an exception if this node name contains illegal
                 // characters
-                if (invalidNodeTitleNameRegex.IsMatch(CurrentNode.Name))
+                if (this.invalidNodeTitleNameRegex.IsMatch(this.CurrentNode.Name))
                 {
-                    diagnostics.Add(new Diagnostic(fileParseResult.Name, context, $"The node '{CurrentNode.Name}' contains illegal characters in its title."));
+                    this.diagnostics.Add(new Diagnostic(this.fileParseResult.Name, context, $"The node '{this.CurrentNode.Name}' contains illegal characters in its title."));
                 }
             }
 
@@ -1097,13 +1317,13 @@ namespace Yarn.Compiler
                 // Split the list of tags by spaces, and use that
                 var tags = headerValue.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
 
-                CurrentNode.Tags.Add(tags);
+                this.CurrentNode.Tags.Add(tags);
 
-                if (CurrentNode.Tags.Contains("rawText"))
+                if (this.CurrentNode.Tags.Contains("rawText"))
                 {
                     // This is a raw text node. Flag it as such for future
                     // compilation.
-                    RawTextNode = true;
+                    this.RawTextNode = true;
                 }
             }
         }
@@ -1114,14 +1334,20 @@ namespace Yarn.Compiler
         // everything from that point onwards
         public override void EnterBody(YarnSpinnerParser.BodyContext context)
         {
+            // ok so something in here needs to be a bit different
+            // also need to emit tracking code here for when we fall out of a node that needs tracking?
+            // or should do I do in inside the codegenvisitor?
+
             // if it is a regular node
-            if (!RawTextNode)
+            if (!this.RawTextNode)
             {
                 // This is the start of a node that we can jump to. Add a
                 // label at this point.
-                CurrentNode.Labels.Add(RegisterLabel(), CurrentNode.Instructions.Count);
+                this.CurrentNode.Labels.Add(this.RegisterLabel(), this.CurrentNode.Instructions.Count);
 
-                CodeGenerationVisitor visitor = new CodeGenerationVisitor(this);
+                string track = TrackingNodes.Contains(CurrentNode.Name) ? Yarn.Library.GenerateUniqueVisitedVariableForNode(CurrentNode.Name) : null;
+
+                CodeGenerationVisitor visitor = new CodeGenerationVisitor(this, track);
 
                 foreach (var statement in context.statement())
                 {
@@ -1132,7 +1358,7 @@ namespace Yarn.Compiler
             // string
             else
             {
-                CurrentNode.SourceTextStringID = Compiler.GetLineIDForNodeName(CurrentNode.Name);
+                this.CurrentNode.SourceTextStringID = Compiler.GetLineIDForNodeName(this.CurrentNode.Name);
             }
         }
 
@@ -1143,8 +1369,20 @@ namespace Yarn.Compiler
 
         public override void ExitBody(YarnSpinnerParser.BodyContext context)
         {
+            // this gives us the final increment at the end of the node
+            // this is for when we visit and complete a node without a jump
+            // theoretically this does mean that there might be redundant increments
+            // but I don't think it will matter because a jump always prevents
+            // the extra increment being reached
+            // a bit inelegant to do it this way but the codegen visitor doesn't exit a node
+            // will do for now, shouldn't be hard to refactor this later
+            string track = TrackingNodes.Contains(CurrentNode.Name) ? Yarn.Library.GenerateUniqueVisitedVariableForNode(CurrentNode.Name) : null;
+            if (track != null)
+            {
+                CodeGenerationVisitor.GenerateTrackingCode(this, track);
+            }
             // We have exited the body; emit a 'stop' opcode here.
-            Emit(CurrentNode, OpCode.Stop);
+            this.Emit(this.CurrentNode, this.CurrentDebugInfo, context.Stop.Line - 1, 0, OpCode.Stop);
         }
 
         /// <summary>

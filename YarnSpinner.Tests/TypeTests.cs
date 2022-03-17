@@ -45,7 +45,16 @@ namespace YarnSpinner.Tests
                     Name = "$int",
                     Type = BuiltinTypes.Number,
                     DefaultValue = 5f,
-                    SourceNodeLine = 1,
+                    Range = new Yarn.Compiler.Range {
+                        Start = {
+                            Line = 3,
+                            Character = 22,
+                        },
+                        End = {
+                            Line = 3,
+                            Character = 26,
+                        }
+                    },
                     SourceNodeName = "Start",
                     SourceFileName = "input",
                 },
@@ -53,7 +62,16 @@ namespace YarnSpinner.Tests
                     Name = "$str",
                     Type = BuiltinTypes.String,
                     DefaultValue = "yes",
-                    SourceNodeLine = 2,
+                    Range = new Yarn.Compiler.Range {
+                        Start = {
+                            Line = 4,
+                            Character = 22,
+                        },
+                        End = {
+                            Line = 4,
+                            Character = 26,
+                        }
+                    },
                     SourceNodeName = "Start",
                     SourceFileName = "input",
                 },
@@ -61,7 +79,16 @@ namespace YarnSpinner.Tests
                     Name = "$bool",
                     Type = BuiltinTypes.Boolean,
                     DefaultValue = true,
-                    SourceNodeLine = 11,
+                    Range = new Yarn.Compiler.Range {
+                        Start = {
+                            Line = 13,
+                            Character = 22,
+                        },
+                        End = {
+                            Line = 13,
+                            Character = 27,
+                        }
+                    },
                     SourceNodeName = "Start",
                     SourceFileName = "input",
                 },
@@ -77,7 +104,7 @@ namespace YarnSpinner.Tests
                 Assert.Equal(expected.Name, actual.Name);
                 Assert.Equal(expected.Type, actual.Type);
                 Assert.Equal(expected.DefaultValue, actual.DefaultValue);
-                Assert.Equal(expected.SourceNodeLine, actual.SourceNodeLine);
+                Assert.Equal(expected.Range, actual.Range);
                 Assert.Equal(expected.SourceNodeName, actual.SourceNodeName);
                 Assert.Equal(expected.SourceFileName, actual.SourceFileName);
             }
@@ -442,7 +469,8 @@ namespace YarnSpinner.Tests
 
             var result = Compiler.Compile(CompilationJob.CreateFromString("input", source, dialogue.Library));
 
-            Assert.Collection(result.Diagnostics, p => Assert.Matches(@"Type \w+ does not match", p.Message));
+            Assert.Collection(result.Diagnostics, diag => Assert.Matches(@"Type \w+ does not match", diag.Message),
+                                                  diag => Assert.Matches(@"Can't figure out the type of variable \$\w+ given its context. Specify its type with a <<declare>> statement.", diag.Message));
         }
 
         [Fact]
@@ -637,7 +665,7 @@ namespace YarnSpinner.Tests
                 .AddLine("True")
                 .AddLine("True")
                 .AddLine("True")
-                .AddLine("True")                
+                .AddLine("True")
                 .GetPlan();
 
             // the library is NOT attached to this compilation job; all
@@ -696,7 +724,7 @@ namespace YarnSpinner.Tests
 
             // Both declarations that resulted from the compile should be functions found on line 1
             foreach (var decl in result.Declarations) {
-                Assert.Equal(1, decl.SourceNodeLine);
+                Assert.Equal(3, decl.Range.Start.Line);
                 Assert.IsType<FunctionType>(decl.Type);
             }
 
@@ -760,6 +788,56 @@ namespace YarnSpinner.Tests
             var allBuiltinTypes = BuiltinTypes.AllBuiltinTypes;
 
             Assert.NotEmpty(allBuiltinTypes);
+        }
+
+        [Fact]
+        public void TestDeclarationBuilderCanBuildDeclarations()
+        {
+            // Given
+            var declaration = new DeclarationBuilder()
+                .WithName("$myVar")
+                .WithDescription("my description")
+                .WithImplicit(false)
+                .WithSourceFileName("MyFile.yarn")
+                .WithSourceNodeName("Test")
+                .WithRange(new Yarn.Compiler.Range(0, 0, 0, 10))
+                .WithType(BuiltinTypes.String)
+                .Declaration;
+
+            var expectedDeclaration = new Declaration
+            {
+                Name = "$myVar",
+                Description = "my description",
+                IsImplicit = false,
+                SourceFileName = "MyFile.yarn",
+                SourceNodeName = "Test",
+                Range = new Yarn.Compiler.Range(0, 0, 0, 10),
+                Type = BuiltinTypes.String
+            };
+
+            // Then
+            Assert.Equal(expectedDeclaration, declaration);
+        }
+
+        [Fact]
+        public void TestFunctionTypeBuilderCanBuildTypes() {
+            // Given
+            var expectedFunctionType = new FunctionType();
+            expectedFunctionType.ReturnType = BuiltinTypes.String;
+            expectedFunctionType.AddParameter(BuiltinTypes.String);
+            expectedFunctionType.AddParameter(BuiltinTypes.Number);
+
+            var functionType = new FunctionTypeBuilder()
+                .WithParameter(BuiltinTypes.String)
+                .WithParameter(BuiltinTypes.Number)
+                .WithReturnType(BuiltinTypes.String)
+                .FunctionType;
+
+            // Then
+            Assert.Equal(expectedFunctionType.Parameters.Count, functionType.Parameters.Count);
+            Assert.Equal(expectedFunctionType.Parameters[0], functionType.Parameters[0]);
+            Assert.Equal(expectedFunctionType.Parameters[1], functionType.Parameters[1]);
+            Assert.Equal(expectedFunctionType.ReturnType, functionType.ReturnType);
         }
     }
 }

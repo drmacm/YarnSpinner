@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Added `DeclarationBuilder` and `FunctionTypeBuilder` classes. These classes allow external libraries to construct new `Declaration` and `FunctionType` objects, without having to have access to the internal setters.
+- `CompilationResult.DebugInfo` now provides per-instruction positional debug information.
+  - This allows users of the `Compiler` class to access positional information for each instruction, which is an important first step for source-level debugging.
+- Made `Diagnostic` and `Declaration` serializable, for easier communication with language servers and other utilities.
+
+### Changed
+
+- `Declaration` and `Diagnostic` now provide position information via a `Range` object, which specifies the start and end position of the relevant parts of the document.
+- Fixed an issue where attempting to access the value of a variable with insufficient context to figure out its type would crash the compiler. (This could happen when you used a variable in a line, like `Variable: {$myVar}` with no other uses of `$myVar`.)
+- Fixed an issue where an option condition with no expression (for example: `-> Option one <<if>>`) would crash the compiler.
+- The compiler will no longer attempt to generate code if the Yarn script contains errors. (Previously, it was generating code, and then discarding it, but this allows for potential errors and crashes if code-generation is attempted on an invalid parse tree.)
+- Typechecker now does partial backwards type inference, allowing for functions and variables to inform the type of the other regardless of them being the l- or r-value in an expression.
+
+### Removed
+
+## [2.1.0] 2022-02-17
+
+### Added
+
 - The `<<jump>>` statement can now take an expression.
 
 ```yarn
@@ -18,6 +37,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Previously, the `jump` statement required the name of a node. With this change, it can now also take an expression that resolves to the name of a node.
 - Jump expressions may be a constant string, a variable, a function call, or any other type of expression.
 - These expressions must be wrapped in curly braces (`{` `}`), and must produce a string.
+
+- Automatic visitation tracking.
+
+You can use the `visit` and `visited_count` functions which take in the title of a node and return true of false in the first one, and the number of times visited in the second.
+This can be controlled and overriden by the use a header tag `tracking`.
+Setting `tracking: always` forces visitation tracking to be enabled even when there are no calls to either function for that node.
+Setting `tracking: never` forces no visit tracking regardless of function calls to that node.
 
 ### Changed
 

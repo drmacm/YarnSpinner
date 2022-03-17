@@ -16,6 +16,9 @@ namespace Yarn.Compiler
     /// </summary>
     internal class TypeCheckVisitor : YarnSpinnerParserBaseVisitor<Yarn.IType>
     {
+        // {0} = variable name
+        private const string CantDetermineVariableTypeError = "Can't figure out the type of variable {0} given its context. Specify its type with a <<declare>> statement.";
+
         // The collection of variable declarations we know about before
         // starting our work
         private readonly IEnumerable<Declaration> existingDeclarations;
@@ -44,6 +47,9 @@ namespace Yarn.Compiler
         private readonly IEnumerable<IType> types;
 
         private readonly List<Diagnostic> diagnostics = new List<Diagnostic>();
+
+        // the list of variables we aren't actually sure about
+        public List<DeferredTypeDiagnostic> deferredTypes = new List<DeferredTypeDiagnostic>();
 
         /// <summary>
         /// Gets the collection of all declarations - both the ones we received
@@ -149,11 +155,26 @@ namespace Yarn.Compiler
                 }
             }
 
+            // do we already have a potential warning about this?
+            // no need to make more
+            foreach (var hmm in deferredTypes)
+            {
+                if (hmm.Name == name)
+                {
+                    return BuiltinTypes.Undefined;
+                }
+            }
+
+            // creating a new diagnostic for us having an undefined variable
+            // this won't get added into the existing diags though because its possible a later pass will clear it up
+            // so we save this as a potential diagnostic for the compiler itself to resolve
+            var diagnostic = new Diagnostic(sourceFileName, context, string.Format(CantDetermineVariableTypeError, name));
+            deferredTypes.Add(DeferredTypeDiagnostic.CreateDeferredTypeDiagnostic(name, diagnostic));
+
             // We don't have a declaration for this variable. Return
             // Undefined. Hopefully, other context will allow us to infer a
             // type.
             return BuiltinTypes.Undefined;
-
         }
 
         public override Yarn.IType VisitValueFunc(YarnSpinnerParser.ValueFuncContext context)
@@ -172,7 +193,8 @@ namespace Yarn.Compiler
                 // implicit one.
 
                 functionType = new FunctionType();
-                functionType.ReturnType = BuiltinTypes.Undefined;
+                // because it is an implicit declaration we will use the type hint to give us a return type
+                functionType.ReturnType = context.Hint != BuiltinTypes.Undefined ? context.Hint : BuiltinTypes.Undefined;
 
                 functionDeclaration = new Declaration
                 {
@@ -181,9 +203,20 @@ namespace Yarn.Compiler
                     IsImplicit = true,
                     Description = $"Implicit declaration of function at {sourceFileName}:{context.Start.Line}:{context.Start.Column}",
                     SourceFileName = sourceFileName,
-                    SourceFileLine = context.Start.Line,
                     SourceNodeName = currentNodeName,
-                    SourceNodeLine = context.Start.Line - (this.currentNodeContext.BODY_START().Symbol.Line + 1),
+                    Range = new Range
+                    {
+                        Start =
+                        {
+                            Line = context.Start.Line - 1,
+                            Character = context.Start.Column,
+                        },
+                        End =
+                        {
+                            Line = context.Stop.Line - 1,
+                            Character = context.Stop.Column + context.Stop.Text.Length,
+                        },
+                    },
                 };
 
                 // Create the array of parameters for this function based
@@ -202,10 +235,21 @@ namespace Yarn.Compiler
             }
             else
             {
+                var a = (FunctionType)functionDeclaration.Type;
                 functionType = functionDeclaration.Type as FunctionType;
                 if (functionType == null)
                 {
                     throw new InvalidOperationException($"Internal error: decl's type is not a {nameof(FunctionType)}");
+                }
+
+                // we have an existing function but its undefined
+                // if we also have a type hint we can use that to update it
+                if (functionType.ReturnType == BuiltinTypes.Undefined && context.Hint != BuiltinTypes.Undefined)
+                {
+                    NewDeclarations.Remove(functionDeclaration);
+                    functionType.ReturnType = context.Hint;
+                    functionDeclaration.Type = functionType;
+                    NewDeclarations.Add(functionDeclaration);
                 }
             }
 
@@ -243,7 +287,7 @@ namespace Yarn.Compiler
 
                 if (TypeUtil.IsSubType(expectedType, suppliedType) == false)
                 {
-                    this.diagnostics.Add(new Diagnostic(this.sourceFileName, context, $"{functionName} parameter {i + 1} expects a {expectedType.Name}, not a {(suppliedType?.Name ?? "undefined")}"));
+                    this.diagnostics.Add(new Diagnostic(this.sourceFileName, context, $"{functionName} parameter {i + 1} expects a {expectedType?.Name ?? "undefined"}, not a {suppliedType?.Name ?? "undefined"}"));
                     return functionType.ReturnType;
                 }
             }
@@ -256,6 +300,8 @@ namespace Yarn.Compiler
 
         public override Yarn.IType VisitExpValue(YarnSpinnerParser.ExpValueContext context)
         {
+            // passing the hint from the expression down into the values within
+            context.value().Hint = context.Hint;
             // Value expressions have the type of their inner value
             Yarn.IType type = Visit(context.value());
             context.Type = type;
@@ -279,14 +325,27 @@ namespace Yarn.Compiler
 
         public override Yarn.IType VisitSet_statement([NotNull] YarnSpinnerParser.Set_statementContext context)
         {
-            var expressionType = Visit(context.expression());
-            var variableType = Visit(context.variable());
+            var variableContext = context.variable();
+            var expressionContext = context.expression();
 
-            var variableName = context.variable().GetText();
+            if (expressionContext == null || variableContext == null)
+            {
+                return BuiltinTypes.Undefined;
+            }
 
-            ParserRuleContext[] terms = { context.variable(), context.expression() };
+            var variableType = base.Visit(variableContext);
+            if (variableType != BuiltinTypes.Undefined)
+            {
+                // giving the expression a hint just in case it is needed to help resolve any ambiguity on the expression
+                // currently this is only useful in situations where we have a function as the rvalue of a known lvalue
+                expressionContext.Hint = variableType;
+            }
 
-            Yarn.IType type;
+            var expressionType = base.Visit(expressionContext);
+
+            var variableName = variableContext.GetText();
+
+            ParserRuleContext[] terms = { variableContext, expressionContext };
 
             Operator @operator;
 
@@ -311,17 +370,38 @@ namespace Yarn.Compiler
                         // The start line of the body is the line after the delimiter
                         int nodePositionInFile = this.currentNodeContext.BODY_START().Symbol.Line + 1;
 
+                        // Attempt to get a default value for the given type. If
+                        // we can't get one, we can't create the definition.
+                        var canCreateDefaultValue = TryGetDefaultValueForType(expressionType, out var defaultValue);
+
+                        if (!canCreateDefaultValue)
+                        {
+                            diagnostics.Add(new Diagnostic(sourceFileName, variableContext, string.Format(CantDetermineVariableTypeError, variableName)));
+                            break;
+                        }
+
                         // Generate a declaration for this variable here.
                         var decl = new Declaration
                         {
                             Name = variableName,
-                            Description = $"{System.IO.Path.GetFileName(sourceFileName)}, node {currentNodeName}, line {context.Start.Line - nodePositionInFile}",
+                            Description = $"Implicitly declared in {System.IO.Path.GetFileName(sourceFileName)}, node {currentNodeName}",
                             Type = expressionType,
-                            DefaultValue = DefaultValueForType(expressionType),
+                            DefaultValue = defaultValue,
                             SourceFileName = sourceFileName,
-                            SourceFileLine = context.Start.Line,
                             SourceNodeName = currentNodeName,
-                            SourceNodeLine = context.Start.Line - nodePositionInFile,
+                            Range = new Range
+                            {
+                                Start =
+                                {
+                                    Line = variableContext.Start.Line - 1,
+                                    Character = variableContext.Start.Column,
+                                },
+                                End =
+                                {
+                                    Line = variableContext.Stop.Line - 1,
+                                    Character = variableContext.Stop.Column + variableContext.GetText().Length,
+                                },
+                            },
                             IsImplicit = true,
                         };
                         NewDeclarations.Add(decl);
@@ -330,42 +410,48 @@ namespace Yarn.Compiler
                 case YarnSpinnerLexer.OPERATOR_MATHS_ADDITION_EQUALS:
                     // += supports strings and numbers
                     @operator = CodeGenerationVisitor.TokensToOperators[YarnSpinnerLexer.OPERATOR_MATHS_ADDITION];
-                    type = CheckOperation(context, terms, @operator, context.op.Text);
+                    expressionType = CheckOperation(context, terms, @operator, context.op.Text);
                     break;
                 case YarnSpinnerLexer.OPERATOR_MATHS_SUBTRACTION_EQUALS:
                     // -=, *=, /=, %= supports only numbers
                     @operator = CodeGenerationVisitor.TokensToOperators[YarnSpinnerLexer.OPERATOR_MATHS_SUBTRACTION];
-                    type = CheckOperation(context, terms, @operator, context.op.Text);
+                    expressionType = CheckOperation(context, terms, @operator, context.op.Text);
                     break;
                 case YarnSpinnerLexer.OPERATOR_MATHS_MULTIPLICATION_EQUALS:
                     @operator = CodeGenerationVisitor.TokensToOperators[YarnSpinnerLexer.OPERATOR_MATHS_MULTIPLICATION];
-                    type = CheckOperation(context, terms, @operator, context.op.Text);
+                    expressionType = CheckOperation(context, terms, @operator, context.op.Text);
                     break;
                 case YarnSpinnerLexer.OPERATOR_MATHS_DIVISION_EQUALS:
                     @operator = CodeGenerationVisitor.TokensToOperators[YarnSpinnerLexer.OPERATOR_MATHS_DIVISION];
-                    type = CheckOperation(context, terms, @operator, context.op.Text);
+                    expressionType = CheckOperation(context, terms, @operator, context.op.Text);
                     break;
                 case YarnSpinnerLexer.OPERATOR_MATHS_MODULUS_EQUALS:
                     @operator = CodeGenerationVisitor.TokensToOperators[YarnSpinnerLexer.OPERATOR_MATHS_MODULUS];
-                    type = CheckOperation(context, terms, @operator, context.op.Text);
+                    expressionType = CheckOperation(context, terms, @operator, context.op.Text);
                     break;
                 default:
                     throw new InvalidOperationException($"Internal error: {nameof(VisitSet_statement)} got unexpected operand {context.op.Text}");
             }
 
-            if (expressionType == BuiltinTypes.Undefined)
+            if (variableType == BuiltinTypes.Undefined && expressionType == BuiltinTypes.Undefined)
             {
-                // We don't know what this is set to, so we'll have to
-                // assume it's ok. Return the variable type, if known.
-                return variableType;
+                this.diagnostics.Add(new Diagnostic(this.sourceFileName, context, $"Type of expression \"{context.GetTextWithWhitespace()}\" can't be determined without more context. Please declare one or more terms.", Diagnostic.DiagnosticSeverity.Error));
             }
 
+            // at this point we have either fully resolved the type of the expression or been unable to do so
+            // we return the type of the expression regardless and rely on either elements to catch the issue
             return expressionType;
         }
 
+        // ok so what do we actually need to do in here?
+        // we need to do a few different things
+        // basically we need to go through the various types in the expression
+        // if any are known we need to basically log that
+        // then at the end if there are still unknowns we check if the operation itself forces a type
+        // so if we have say Undefined = Undefined + Number then we know that only one operation supports + Number and that is Number + Number
+        // so we can slot the type into the various parts
         private Yarn.IType CheckOperation(ParserRuleContext context, ParserRuleContext[] terms, Operator operationType, string operationDescription, params Yarn.IType[] permittedTypes)
         {
-
             var termTypes = new List<Yarn.IType>();
 
             var expressionType = BuiltinTypes.Undefined;
@@ -434,6 +520,40 @@ namespace Yarn.Compiler
                 }
             }
 
+            // to reach this point we have either worked out the final type of the expression
+            // or had to give up, and if we gave up we have nothing left to do
+            // there are then two parts to this, first we need to declare the implict type of any variables (that appears to be working)
+            // or the implicit type of any function.
+            // annoyingly the function will already have an implicit definition created for it
+            // we will have to strip that out and add in a new one with the new return type
+            foreach (var term in terms)
+            {
+                if (term is YarnSpinnerParser.ExpValueContext)
+                {
+                    var value = ((YarnSpinnerParser.ExpValueContext)term).value();
+                    if (value is YarnSpinnerParser.ValueFuncContext)
+                    {
+                        var id = ((YarnSpinnerParser.ValueFuncContext)value).function_call().FUNC_ID().GetText();
+
+                        Declaration functionDeclaration = NewDeclarations.Where(d => d.Type is FunctionType).FirstOrDefault(d => d.Name == id);
+                        if (functionDeclaration != null)
+                        {
+                            var func = functionDeclaration.Type as FunctionType;
+                            if (func?.ReturnType == BuiltinTypes.Undefined)
+                            {
+                                NewDeclarations.Remove(functionDeclaration);
+                                func.ReturnType = expressionType;
+                                NewDeclarations.Add(functionDeclaration);
+                            }
+                        }
+                        else
+                        {
+                            Visit(term);
+                        }
+                    }
+                }
+            }
+
             // Were any of the terms variables for which we don't currently
             // have a declaration for?
 
@@ -454,17 +574,13 @@ namespace Yarn.Compiler
                 .Concat(terms.OfType<YarnSpinnerParser.ValueVarContext>().Select(v => v.variable()))
                 .Where(c => c != null);
 
-            // Get their names
-            var variableNames = variableContexts
-                .Select(v => v.VAR_ID().GetText())
+            // Build the list of variable contexts that we don't have a
+            // declaration for. We'll check for explicit declarations first.
+            var undefinedVariableContexts = variableContexts
+                .Where(v => Declarations.Any(d => d.Name == v.VAR_ID().GetText()) == false)
                 .Distinct();
 
-            // Build the list of variable names that we don't have a
-            // declaration for. We'll check for explicit declarations first.
-            var undefinedVariableNames = variableNames
-                .Where(name => Declarations.Any(d => d.Name == name) == false);
-
-            if (undefinedVariableNames.Count() > 0)
+            if (undefinedVariableContexts.Count() > 0)
             {
                 // We have references to variables that we don't have a an
                 // explicit declaration for! Time to create implicit
@@ -476,19 +592,45 @@ namespace Yarn.Compiler
                 // The start line of the body is the line after the delimiter
                 int nodePositionInFile = this.currentNodeContext.BODY_START().Symbol.Line + 1;
 
-                foreach (var undefinedVariableName in undefinedVariableNames)
+                foreach (var undefinedVariableContext in undefinedVariableContexts)
                 {
+                    // We can only create an implicit declaration for a variable
+                    // if we have a default value for it, because all variables
+                    // are required to have a value. If we can't, it's generally
+                    // because we couldn't figure out a concrete type for the
+                    // variable given the context.
+                    var canGetDefaultValue = TryGetDefaultValueForType(expressionType, out var defaultValue);
+
+                    // If we can't produce this, then we can't generate the
+                    // declaration.
+                    if (!canGetDefaultValue)
+                    {
+                        this.diagnostics.Add(new Diagnostic(sourceFileName, undefinedVariableContext, string.Format(CantDetermineVariableTypeError, undefinedVariableContext.VAR_ID().GetText())));
+                        continue;
+                    }
+
                     // Generate a declaration for this variable here.
                     var decl = new Declaration
                     {
-                        Name = undefinedVariableName,
-                        Description = $"{System.IO.Path.GetFileName(sourceFileName)}, node {currentNodeName}, line {positionInFile - nodePositionInFile}",
+                        Name = undefinedVariableContext.VAR_ID().GetText(),
+                        Description = $"Implicitly declared in {System.IO.Path.GetFileName(sourceFileName)}, node {currentNodeName}",
                         Type = expressionType,
-                        DefaultValue = DefaultValueForType(expressionType),
+                        DefaultValue = defaultValue,
                         SourceFileName = sourceFileName,
-                        SourceFileLine = positionInFile,
                         SourceNodeName = currentNodeName,
-                        SourceNodeLine = positionInFile - nodePositionInFile,
+                        Range = new Range
+                        {
+                            Start =
+                            {
+                                Line = undefinedVariableContext.Start.Line - 1,
+                                Character = undefinedVariableContext.Start.Column,
+                            },
+                            End =
+                            {
+                                Line = undefinedVariableContext.Stop.Line - 1,
+                                Character = undefinedVariableContext.Stop.Column + undefinedVariableContext.Stop.Text.Length,
+                            },
+                        },
                         IsImplicit = true,
                     };
                     NewDeclarations.Add(decl);
@@ -591,23 +733,27 @@ namespace Yarn.Compiler
             }
         }
 
-        private static IConvertible DefaultValueForType(Yarn.IType expressionType)
+        private static bool TryGetDefaultValueForType(Yarn.IType expressionType, out IConvertible defaultValue)
         {
             if (expressionType == BuiltinTypes.String)
             {
-                return string.Empty;
+                defaultValue = string.Empty;
+                return true;
             }
             else if (expressionType == BuiltinTypes.Number)
             {
-                return default(float);
+                defaultValue = default(float);
+                return true;
             }
             else if (expressionType == BuiltinTypes.Boolean)
             {
-                return default(bool);
+                defaultValue = default(bool);
+                return true;
             }
             else
             {
-                throw new ArgumentOutOfRangeException($"No default value for type {expressionType.Name} exists.");
+                defaultValue = null;
+                return false;
             }
         }
 
@@ -654,8 +800,6 @@ namespace Yarn.Compiler
             context.Type = type;
             return type;
         }
-
-
 
         public override Yarn.IType VisitExpComparison(YarnSpinnerParser.ExpComparisonContext context)
         {
@@ -709,19 +853,6 @@ namespace Yarn.Compiler
             context.Type = type;
 
             return BuiltinTypes.Boolean;
-        }
-
-        public override Yarn.IType VisitLine_formatted_text([NotNull] YarnSpinnerParser.Line_formatted_textContext context)
-        {
-            // Type-check every expression in this line, using the None
-            // operator and permitting the expression to be of Any type
-            foreach (var expression in context.expression())
-            {
-                var type = CheckOperation(expression, new[] { expression }, Operator.None, "inline expression", BuiltinTypes.Any);
-                expression.Type = type;
-            }
-
-            return BuiltinTypes.String;
         }
 
         public override IType VisitJumpToExpression([NotNull] YarnSpinnerParser.JumpToExpressionContext context)

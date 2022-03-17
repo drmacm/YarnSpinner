@@ -544,6 +544,13 @@ namespace Yarn
 
             Library.ImportLibrary(new StandardLibrary());
 
+            Library.RegisterFunction("visited", delegate(string node){
+                return IsNodeVisited(node);
+            });
+            Library.RegisterFunction("visited_count", delegate(string node){
+                return GetNodeVisitCount(node);
+            });
+
             lineParser = new LineParser();
 
             lineParser.RegisterMarkerProcessor("select", this);
@@ -996,6 +1003,22 @@ namespace Yarn
             string input = replacementValue.ToString();
             return ValuePlaceholderRegex.Replace(input, value);
 
+        }
+
+        private bool IsNodeVisited(string nodeName)
+        {
+            float count = 0;
+            if (VariableStorage.TryGetValue<float>(Library.GenerateUniqueVisitedVariableForNode(nodeName), out count))
+            {
+                return count > 0;
+            }
+            return false;
+        }
+        private float GetNodeVisitCount(string nodeName)
+        {
+            float count = 0;
+            VariableStorage.TryGetValue<float>(Library.GenerateUniqueVisitedVariableForNode(nodeName), out count);
+            return count;
         }
 
         // The standard, built-in library of functions and operators.
