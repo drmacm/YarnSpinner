@@ -7,7 +7,7 @@ namespace Yarn.Markup
         /// <inheritdoc/>
         public string ReplacementTextForMarker(MarkupAttributeMarker marker)
         {
-            if (marker.TryGetProperty(LineParser.ReplacementMarkerContents, out var prop))
+            if (marker.TryGetProperty(LineParser.TextAttributeName, out var prop))
             {
                 return prop.StringValue;
             }

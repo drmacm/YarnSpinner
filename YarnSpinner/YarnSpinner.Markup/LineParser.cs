@@ -14,27 +14,27 @@ namespace Yarn.Markup
         /// The name of the property in replacement attributes that
         /// contains the text of the attribute.
         /// </summary>
-        public const string ReplacementMarkerContents = "contents";
+        public const string TextAttributeName = "contents";
 
         /// <summary>
         /// The name of the implicitly-generated <c>character</c> attribute.
         /// </summary>
-        /// <seealso cref="CharacterAttributeNameProperty"/>
-        public const string CharacterAttribute = "character";
+        /// <seealso cref="NameAttributeName"/>
+        public const string CharacterAttributeName = "character";
 
         /// <summary>
         /// The name of the 'name' property, on the implicitly-generated
         /// <c>character</c> attriubte.
         /// </summary>
-        /// <seealso cref="CharacterAttribute"/>
-        public const string CharacterAttributeNameProperty = "name";
+        /// <seealso cref="CharacterAttributeName"/>
+        public const string NameAttributeName = "name";
 
         /// <summary>
         /// The name of the property to use to signify that trailing
         /// whitespace should be trimmed if a tag had preceding whitespace
         /// or begins the line. This property must be a bool value.
         /// </summary>
-        public const string TrimWhitespaceProperty = "trimwhitespace";
+        public const string TrimWhitespaceAttributeName = "trimwhitespace";
 
         /// <summary>
         /// A regular expression that matches a colon followed by optional
@@ -54,7 +54,7 @@ namespace Yarn.Markup
         /// A dictionary that maps the names of attributes to an object
         /// that can generate replacement text for those attributes.
         /// </summary>
-        private readonly Dictionary<string, IAttributeMarkerProcessor> markerProcessors = new Dictionary<string, IAttributeMarkerProcessor>();
+        private readonly Dictionary<string, IAttributeMarkerProcessor> processorsForAttributes = new Dictionary<string, IAttributeMarkerProcessor>();
 
         /// <summary>
         /// The original text that this line parser is parsing.
@@ -105,12 +105,12 @@ namespace Yarn.Markup
         /// when markers with this name are encountered.</param>
         internal void RegisterMarkerProcessor(string attributeName, IAttributeMarkerProcessor markerProcessor)
         {
-            if (this.markerProcessors.ContainsKey(attributeName))
+            if (this.processorsForAttributes.ContainsKey(attributeName))
             {
                 throw new InvalidOperationException($"A marker processor for {attributeName} has already been registered.");
             }
 
-            this.markerProcessors.Add(attributeName, markerProcessor);
+            this.processorsForAttributes.Add(attributeName, markerProcessor);
         }
 
         /// <summary>Parses a line of text, and produces a
@@ -185,7 +185,7 @@ namespace Yarn.Markup
                     bool wasReplacementMarker = false;
 
                     // Is this a replacement marker?
-                    if (marker.Name != null && this.markerProcessors.ContainsKey(marker.Name))
+                    if (marker.Name != null && this.processorsForAttributes.ContainsKey(marker.Name))
                     {
                         wasReplacementMarker = true;
 
@@ -214,11 +214,11 @@ namespace Yarn.Markup
                             trimWhitespaceIfAble = !wasReplacementMarker;
                         }
 
-                        if (marker.TryGetProperty(TrimWhitespaceProperty, out var prop))
+                        if (marker.TryGetProperty(TrimWhitespaceAttributeName, out var prop))
                         {
                             if (prop.Type != MarkupValueType.Bool)
                             {
-                                throw new MarkupParseException($"Error parsing line {this.input}: attribute {marker.Name} at position {this.position} has a {prop.Type.ToString().ToLower()} property \"{TrimWhitespaceProperty}\" - this property is required to be a boolean value.");
+                                throw new MarkupParseException($"Error parsing line {this.input}: attribute {marker.Name} at position {this.position} has a {prop.Type.ToString().ToLower()} property \"{TrimWhitespaceAttributeName}\" - this property is required to be a boolean value.");
                             }
 
                             trimWhitespaceIfAble = prop.BoolValue;
@@ -254,7 +254,7 @@ namespace Yarn.Markup
             var characterAttributeIsPresent = false;
             foreach (var attribute in attributes)
             {
-                if (attribute.Name == CharacterAttribute)
+                if (attribute.Name == CharacterAttributeName)
                 {
                     characterAttributeIsPresent = true;
                 }
@@ -277,9 +277,9 @@ namespace Yarn.Markup
                         StringValue = characterName,
                     };
 
-                    MarkupProperty nameProperty = new MarkupProperty(CharacterAttributeNameProperty, nameValue);
+                    MarkupProperty nameProperty = new MarkupProperty(NameAttributeName, nameValue);
 
-                    var characterAttribute = new MarkupAttribute(0, 0, endRange, CharacterAttribute, new[] { nameProperty });
+                    var characterAttribute = new MarkupAttribute(0, 0, endRange, CharacterAttributeName, new[] { nameProperty });
 
                     attributes.Add(characterAttribute);
                 }
@@ -321,7 +321,7 @@ namespace Yarn.Markup
                 // Add this as a property
                 marker.Properties.Add(
                     new MarkupProperty(
-                        ReplacementMarkerContents,
+                        TextAttributeName,
                         new MarkupValue
                         {
                             StringValue = markerContents,
@@ -331,7 +331,7 @@ namespace Yarn.Markup
 
             // Fetch the text that should be inserted into the string at
             // this point
-            var replacementText = this.markerProcessors[marker.Name].ReplacementTextForMarker(marker);
+            var replacementText = this.processorsForAttributes[marker.Name].ReplacementTextForMarker(marker);
 
             return replacementText;
         }
@@ -816,6 +816,7 @@ namespace Yarn.Markup
                     idStringBuilder.Append(nextChar);
                     idStringBuilder.Append(nextNextChar);
                 }
+                //TODO: nextChar and tempNext are in sync, we should check just one
                 else if (char.IsLetterOrDigit(nextChar) || (char)tempNext == '_')
                 {
                     idStringBuilder.Append((char)tempNext);
@@ -890,6 +891,7 @@ namespace Yarn.Markup
             this.AssertNotEndOfInput(tempNext);
             if ((char)tempNext != character)
             {
+                //TODO: Add position info
                 throw new MarkupParseException($"Expected a {character} inside markup in line \"{this.input}\"");
             }
 
